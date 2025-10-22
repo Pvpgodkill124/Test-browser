@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Browser</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #2d3748;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4a5568;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #718096;
+        }
+        /* Style for active tab */
+        .tab.active {
+            background-color: #4a5568;
+            border-bottom-color: #3b82f6;
+        }
+        /* Class for desktop mode iframe container */
+        .desktop-mode {
+            width: 1280px; /* A common desktop width */
+            height: 800px; /* A common desktop height */
+            margin: 2rem auto;
+            border: 1px solid #4a5568;
+            overflow: auto;
+            resize: both;
+        }
+        /* Summary Modal Styles */
+        #summary-modal {
+            background-color: rgba(0, 0, 0, 0.5);
+            transition: opacity 0.3s ease;
+        }
+        .spinner {
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        /* Sparkle effect for AI button */
+        .sparkle-button {
+            position: relative;
+            overflow: hidden;
+        }
+        .sparkle-button::after {
+            content: '✨';
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            width: 20px;
+            height: 20px;
+            font-size: 1.2rem;
+            animation: sparkle 1.5s infinite ease-in-out;
+            opacity: 0;
+        }
+        @keyframes sparkle {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: scale(1.5) translateX(30px) translateY(30px); opacity: 0; }
+        }
+    </style>
+</head>
+<body class="bg-gray-800 text-white flex flex-col h-screen font-sans overflow-hidden">
+
+    <!-- Browser UI Container -->
+    <div class="bg-gray-900 shadow-lg flex flex-col">
+        <!-- Tabs Bar -->
+        <div id="tabs-bar" class="flex items-center bg-gray-700 p-1 overflow-x-auto">
+            <div id="tabs-container" class="flex">
+                <!-- Tabs will be inserted here -->
+            </div>
+            <button id="new-tab-btn" class="ml-2 p-2 rounded-md hover:bg-gray-600 focus:outline-none">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+            </button>
+        </div>
+
+        <!-- Navigation Controls -->
+        <div class="flex items-center p-2 bg-gray-800 border-t border-gray-700">
+            <button id="back-btn" class="p-2 rounded-full hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-lucide="arrow-left" class="w-5 h-5"></i>
+            </button>
+            <button id="forward-btn" class="p-2 rounded-full hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                <i data-lucide="arrow-right" class="w-5 h-5"></i>
+            </button>
+            <button id="refresh-btn" class="p-2 rounded-full hover:bg-gray-700">
+                <i data-lucide="rotate-cw" class="w-5 h-5"></i>
+            </button>
+            
+            <!-- Address/Search Bar -->
+            <div class="flex-grow mx-2">
+                <form id="nav-form" class="flex items-center bg-gray-700 rounded-full px-4 py-1">
+                    <i data-lucide="search" class="w-5 h-5 text-gray-400 mr-2"></i>
+                    <input type="text" id="address-bar" class="w-full bg-transparent focus:outline-none text-white" placeholder="Search Google or type a URL">
+                </form>
+            </div>
+
+            <button id="desktop-mode-btn" class="p-2 rounded-full hover:bg-gray-700" title="Toggle Desktop Mode">
+                 <i data-lucide="smartphone" class="w-5 h-5"></i>
+            </button>
+            <button id="summarize-btn" class="p-2 rounded-full hover:bg-gray-700 sparkle-button" title="✨ Summarize Page">
+                 <i data-lucide="sparkles" class="w-5 h-5 text-yellow-300"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content Area for Iframes -->
+    <main id="content-area" class="flex-grow bg-gray-800 relative">
+        <!-- Browser iframes will be appended here -->
+    </main>
+    
+    <!-- Initial New Tab Page Template -->
+    <template id="new-tab-template">
+        <div class="w-full h-full flex flex-col items-center justify-center bg-gray-800 text-white p-8">
+            <h1 class="text-6xl font-bold mb-4">Gemini</h1>
+            <p class="text-xl text-gray-400 mb-8">Your AI-Powered Browser</p>
+            <form class="w-full max-w-xl new-tab-search-form">
+                <div class="flex items-center bg-gray-700 rounded-full px-4 py-2 shadow-lg">
+                    <i data-lucide="search" class="w-5 h-5 text-gray-400 mr-3"></i>
+                    <input type="text" class="w-full bg-transparent focus:outline-none text-white text-lg" placeholder="Search the web...">
+                </div>
+            </form>
+             <div class="mt-8 p-4 bg-yellow-900/50 border border-yellow-700 text-yellow-300 rounded-lg max-w-2xl text-center">
+                <p><strong>Note:</strong> Some websites may not load due to their security policies (X-Frame-Options), which prevent them from being embedded in other pages. This is standard browser security.</p>
+            </div>
+        </div>
+    </template>
+
+    <!-- Summary Modal -->
+    <div id="summary-modal" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="absolute inset-0" id="summary-modal-bg"></div>
+        <div class="bg-gray-700 rounded-lg shadow-xl p-6 w-full max-w-2xl mx-4 relative z-10 max-h-[80vh] flex flex-col">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-xl font-bold flex items-center"><i data-lucide="sparkles" class="w-6 h-6 mr-2 text-yellow-300"></i>Page Summary</h3>
+                <button id="close-summary-btn" class="p-2 rounded-full hover:bg-gray-600">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div id="summary-content" class="flex-grow overflow-y-auto">
+                <!-- Loading spinner -->
+                <div id="summary-loader" class="flex justify-center items-center h-48 hidden">
+                    <div class="spinner w-12 h-12 rounded-full border-4 border-gray-500"></div>
+                </div>
+                <!-- Summary result -->
+                <div id="summary-result" class="prose prose-invert max-w-none"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Elements ---
+            const tabsContainer = document.getElementById('tabs-container');
+            const newTabBtn = document.getElementById('new-tab-btn');
+            const contentArea = document.getElementById('content-area');
+            const addressBar = document.getElementById('address-bar');
+            const navForm = document.getElementById('nav-form');
+            const backBtn = document.getElementById('back-btn');
+            const forwardBtn = document.getElementById('forward-btn');
+            const refreshBtn = document.getElementById('refresh-btn');
+            const desktopModeBtn = document.getElementById('desktop-mode-btn');
+            const newTabTemplate = document.getElementById('new-tab-template');
+            const summarizeBtn = document.getElementById('summarize-btn');
+            const summaryModal = document.getElementById('summary-modal');
+            const summaryModalBg = document.getElementById('summary-modal-bg');
+            const closeSummaryBtn = document.getElementById('close-summary-btn');
+            const summaryLoader = document.getElementById('summary-loader');
+            const summaryResult = document.getElementById('summary-result');
+
+
+            // --- State Management ---
+            let tabs = [];
+            let activeTabId = null;
+            let isDesktopMode = false;
+
+            // --- Core Functions ---
+            
+            const generateId = () => `tab-${Date.now()}-${Math.random()}`;
+
+            const createNewTab = () => {
+                const tabId = generateId();
+                
+                const tab = document.createElement('div');
+                tab.className = 'tab flex items-center p-2 border-b-2 border-transparent cursor-pointer hover:bg-gray-600';
+                tab.dataset.tabId = tabId;
+                tab.innerHTML = `
+                    <i data-lucide="file" class="w-4 h-4 mr-2 text-gray-400"></i>
+                    <span class="tab-title text-sm truncate max-w-xs">New Tab</span>
+                    <button class="close-tab-btn ml-2 p-1 rounded-full hover:bg-gray-500">
+                        <i data-lucide="x" class="w-3 h-3"></i>
+                    </button>
+                `;
+                
+                const contentPane = document.createElement('div');
+                contentPane.className = 'content-pane hidden absolute top-0 left-0 w-full h-full';
+                contentPane.dataset.tabId = tabId;
+                
+                const newTabContent = newTabTemplate.content.cloneNode(true);
+                contentPane.appendChild(newTabContent);
+
+                tabsContainer.appendChild(tab);
+                contentArea.appendChild(contentPane);
+                
+                const newTabState = {
+                    id: tabId,
+                    title: 'New Tab',
+                    url: null,
+                    element: tab,
+                    pane: contentPane,
+                    iframe: null, 
+                    history: [],
+                    historyIndex: -1,
+                };
+                tabs.push(newTabState);
+
+                lucide.createIcons();
+                
+                tab.addEventListener('click', () => setActiveTab(tabId));
+                tab.querySelector('.close-tab-btn').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    closeTab(tabId);
+                });
+                
+                contentPane.querySelector('.new-tab-search-form').addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const query = e.target.querySelector('input').value;
+                    if (query) {
+                        navigateTo(query);
+                    }
+                });
+
+                setActiveTab(tabId);
+            };
+
+            const setActiveTab = (tabId) => {
+                activeTabId = tabId;
+                
+                tabs.forEach(tab => {
+                    const isActive = tab.id === tabId;
+                    tab.element.classList.toggle('active', isActive);
+                    tab.pane.classList.toggle('hidden', !isActive);
+                });
+
+                updateAddressBar();
+                updateNavControls();
+            };
+
+            const closeTab = (tabId) => {
+                const tabIndex = tabs.findIndex(t => t.id === tabId);
+                if (tabIndex === -1) return;
+
+                const tabToClose = tabs[tabIndex];
+                tabToClose.element.remove();
+                tabToClose.pane.remove();
+                
+                tabs.splice(tabIndex, 1);
+
+                if (activeTabId === tabId) {
+                    if (tabs.length > 0) {
+                        const newActiveIndex = Math.max(0, tabIndex - 1);
+                        setActiveTab(tabs[newActiveIndex].id);
+                    } else {
+                        createNewTab();
+                    }
+                }
+            };
+            
+            const navigateTo = (input) => {
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                if (!activeTab) return;
+
+                let url;
+                try {
+                    url = new URL(input).toString();
+                } catch (e) {
+                    if (input.includes('.') && !input.includes(' ')) {
+                        url = 'http://' + input;
+                    } else {
+                        url = `https://www.google.com/search?q=${encodeURIComponent(input)}`;
+                    }
+                }
+
+                if (!activeTab.iframe) {
+                    activeTab.pane.innerHTML = '';
+                    const iframe = document.createElement('iframe');
+                    iframe.className = 'w-full h-full border-0';
+                    iframe.setAttribute('sandbox', 'allow-forms allow-scripts allow-same-origin allow-popups allow-presentation');
+                    activeTab.pane.appendChild(iframe);
+                    activeTab.iframe = iframe;
+
+                    iframe.addEventListener('load', () => {
+                         try {
+                           const newTitle = iframe.contentDocument.title || new URL(iframe.src).hostname;
+                           updateTabInfo(activeTab.id, newTitle, iframe.src);
+                         } catch (e) {
+                           const hostname = new URL(iframe.src).hostname;
+                           updateTabInfo(activeTab.id, hostname, iframe.src);
+                         }
+                         updateNavControls();
+                    });
+                }
+                
+                activeTab.iframe.src = url;
+                updateTabInfo(activeTab.id, "Loading...", url);
+            };
+
+            const updateTabInfo = (tabId, title, url) => {
+                const tab = tabs.find(t => t.id === tabId);
+                if (tab) {
+                    tab.title = title;
+                    tab.url = url;
+                    tab.element.querySelector('.tab-title').textContent = title;
+                    if (tab.id === activeTabId) {
+                        updateAddressBar();
+                    }
+                }
+            };
+
+            const updateAddressBar = () => {
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                addressBar.value = activeTab && activeTab.url ? activeTab.url : '';
+            };
+
+            const updateNavControls = () => {
+                backBtn.disabled = false;
+                forwardBtn.disabled = false;
+            };
+            
+            const toggleDesktopMode = () => {
+                isDesktopMode = !isDesktopMode;
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                if (activeTab && activeTab.iframe) {
+                    activeTab.pane.classList.toggle('desktop-mode', isDesktopMode);
+                }
+                desktopModeBtn.innerHTML = isDesktopMode ? 
+                    '<i data-lucide="monitor" class="w-5 h-5 text-blue-400"></i>' : 
+                    '<i data-lucide="smartphone" class="w-5 h-5"></i>';
+                lucide.createIcons();
+            }
+
+            // --- Gemini API Integration ---
+            const callGeminiAPI = async (prompt, retries = 3, delay = 1000) => {
+                const apiKey = ""; // Canvas will provide key
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    systemInstruction: {
+                        parts: [{ text: "You are a helpful assistant integrated into a web browser. Your job is to provide concise and easy-to-read summaries of web pages based on their URL. Format the output in clean markdown." }]
+                    },
+                };
+
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const result = await response.json();
+                    const candidate = result.candidates?.[0];
+
+                    if (candidate && candidate.content?.parts?.[0]?.text) {
+                        return candidate.content.parts[0].text;
+                    } else {
+                        throw new Error("Invalid response structure from Gemini API.");
+                    }
+                } catch (error) {
+                    console.error("Gemini API call failed:", error);
+                    if (retries > 0) {
+                        console.log(`Retrying... (${retries} attempts left)`);
+                        await new Promise(res => setTimeout(res, delay));
+                        return callGeminiAPI(prompt, retries - 1, delay * 2); // Exponential backoff
+                    } else {
+                        throw error;
+                    }
+                }
+            };
+            
+            const handleSummarize = async () => {
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                if (!activeTab || !activeTab.url) {
+                    alert("Cannot summarize this page. Navigate to a webpage first.");
+                    return;
+                }
+
+                summaryModal.classList.remove('hidden');
+                summaryLoader.classList.remove('hidden');
+                summaryResult.innerHTML = '';
+
+                try {
+                    const prompt = `Please provide a summary for the webpage at the following URL: ${activeTab.url}. Focus on the main points and key information.`;
+                    const summary = await callGeminiAPI(prompt);
+                    summaryResult.innerHTML = summary.replace(/\n/g, '<br>'); // Simple markdown conversion
+                } catch (error) {
+                    summaryResult.innerHTML = `<p class="text-red-400">Sorry, I couldn't generate a summary for this page. Please try again later.</p><p class="text-xs text-gray-400 mt-2">${error.message}</p>`;
+                } finally {
+                    summaryLoader.classList.add('hidden');
+                }
+            };
+
+
+            // --- Event Listeners ---
+            newTabBtn.addEventListener('click', createNewTab);
+            
+            navForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const input = addressBar.value;
+                if (input) navigateTo(input);
+            });
+
+            refreshBtn.addEventListener('click', () => {
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                if (activeTab && activeTab.iframe) activeTab.iframe.src = activeTab.iframe.src;
+            });
+
+            backBtn.addEventListener('click', () => {
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                if (activeTab && activeTab.iframe) {
+                    try { activeTab.iframe.contentWindow.history.back(); } catch(e) { console.error("Cannot go back:", e) }
+                }
+            });
+
+            forwardBtn.addEventListener('click', () => {
+                const activeTab = tabs.find(t => t.id === activeTabId);
+                if (activeTab && activeTab.iframe) {
+                     try { activeTab.iframe.contentWindow.history.forward(); } catch(e) { console.error("Cannot go forward:", e) }
+                }
+            });
+            
+            desktopModeBtn.addEventListener('click', toggleDesktopMode);
+            summarizeBtn.addEventListener('click', handleSummarize);
+            
+            const closeSummaryModal = () => summaryModal.classList.add('hidden');
+            closeSummaryBtn.addEventListener('click', closeSummaryModal);
+            summaryModalBg.addEventListener('click', closeSummaryModal);
+
+            // --- Initial Setup ---
+            lucide.createIcons(); // Initial icon rendering
+            createNewTab(); // Start with one tab
+        });
+    </script>
+</body>
+</html>
+
